@@ -11,4 +11,4 @@ export const PLACEMENT = Symbol.for('PLACEMENT');
 // 删除节点
 export const UPDATE = Symbol.for('UPDATE');
 // 更新节点
-export const DELETE = Symbol.for('DELETE');
+export const DELETION = Symbol.for('DELETION');

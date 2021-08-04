@@ -1,10 +1,18 @@
 export function setProps(dom: any, oldProps: any, newProps: any) {
   for (const key in oldProps) {
-    
+    if(key !== 'children') {
+      if(newProps.hasOwnProperty(key)) { // 老有新有，更新
+        setProp(dom, key, newProps[key]);
+      } else{ // 老有新无，删除
+        dom.removeAttribute(key);
+      }
+    }
   }
   for (const key in newProps) {
     if(key !== 'children') {
-      setProp(dom, key, newProps[key]);
+      if(!oldProps.hasOwnProperty(key)) { // 老无新有，添加
+        setProp(dom, key, newProps[key]);
+      }
     }
   }
 }
@@ -17,6 +25,7 @@ function setProp(dom: any, key: string, value: any) {
       dom.style[styleName] = value[styleName];
     }
   } else {
-    dom.setAttribute(key, value);
+    console.log('setAttribute', dom)
+    dom.setAttribute && dom?.setAttribute(key, value);
   }
 }

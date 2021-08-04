@@ -22,3 +22,16 @@ const element = createElement('div', {style, id: 'A1'}, 'A1',
 )
 console.log(element)
 ReactDOM.render(element, document.querySelector('#root'));
+
+const element2 = createElement('div', {style, id: 'A1-new'}, 'A1-new',
+  createElement('div', {style, id: 'B1-new'}, 'B1-new', 
+    createElement('div', {style, id: 'C1-new'}, 'C1-new'),
+    createElement('div', {style, id: 'C2-new'}, 'C2-new')
+  ),
+  createElement('div', {style, id: 'B2-new'}, 'B2-new'),
+  createElement('div', {style, id: 'B3-new'}, 'B3-new'),
+)
+const btn = document.querySelector('#render1')
+btn?.addEventListener('click', () => {
+  ReactDOM.render(element2, document.querySelector('#root'));
+})

@@ -1,4 +1,4 @@
-import { ELEMENT_TEXT, PLACEMENT, TAG_HOST, TAG_ROOT, TAG_TEXT } from "./constants";
+import { DELETION, ELEMENT_TEXT, PLACEMENT, TAG_HOST, TAG_ROOT, TAG_TEXT, UPDATE } from "./constants";
 import {setProps} from './utils';
 
 /**
@@ -9,9 +9,22 @@ import {setProps} from './utils';
  * @param rootFiber 
  */
 let nextUnitOfWork: any = null; // 下一个工作单元
-let workInProgressRoot: any = null; // RootFiber 应用的根
+let workInProgressRoot: any = null; // 正在渲染的 RootFiber 应用的根
+let currentRoot: any = null; // 渲染成功之后当前根 ROOTFiber
+const deletions: Array<any> = []; // 删除的节点并不放在 effect list 中，所以需要单独记录并执行
 export function scheduleRoot(rootFiber: any) {
-  workInProgressRoot = rootFiber;
+  if(currentRoot && currentRoot.alternate) { // todo：第二次之后的更新
+    workInProgressRoot = currentRoot.alternate; // 第一次渲染出来的fiber tree
+    workInProgressRoot.props = rootFiber.props; // props更新成新的props
+    workInProgressRoot.alternate = currentRoot; // alternate属性指向当前树
+  }
+  if(currentRoot) { // todo：第一次更新， 说明至少已经渲染了一次
+    rootFiber.alternate = currentRoot;
+    workInProgressRoot = rootFiber;
+  } else { // todo：第一次渲染，说明是第一次渲染
+    workInProgressRoot = rootFiber;
+  }
+  workInProgressRoot.firstEffect = workInProgressRoot.lastEffect = workInProgressRoot.nextEffect = null;
   nextUnitOfWork = rootFiber;
 }
 
@@ -33,12 +46,15 @@ function workLoop(deadline: any) {
 }
 
 function commitRoot() {
+  deletions.forEach(commitWork); // 执行effect list 之前先把该删除的元素删除
   let currentFiber = workInProgressRoot.firstEffect;
   while(currentFiber) {
     console.log(currentFiber.type)
     commitWork(currentFiber);
     currentFiber = currentFiber.nextEffect;
   }
+  deletions.length = 0; // 提交之后清空 deletions
+  currentRoot = workInProgressRoot; // 把当前渲染成功的根fiber，赋给 currentRoot
   workInProgressRoot = null;
 }
 
@@ -46,13 +62,23 @@ function commitWork(currentFiber: any) {
   if(!currentFiber) return;
   const returnFiber = currentFiber.return;
   const returnDOM = returnFiber.stateNode;
-  if(currentFiber.effectTag === PLACEMENT) {
+  if(currentFiber.effectTag === PLACEMENT) { // 新增节点
     returnDOM.appendChild(currentFiber.stateNode);
+  } else if(currentFiber.effectTag === DELETION) {
+    returnDOM.removeChild(currentFiber.stateNode);
+  } else if(currentFiber.effectTag === UPDATE) {
+    if(currentFiber.type === ELEMENT_TEXT) { // 文本
+      if(currentFiber.alternate.props.text !== currentFiber.props.text) { // 新旧文本不一样时
+        currentFiber.stateNode.textContent = currentFiber.props.text;
+      } else {
+        updateDOM(currentFiber.stateNode, currentFiber.alternate.props, currentFiber.props);
+      }
+    }
   }
   currentFiber.effectTag = null;
 }
 
-function performUnitOfWork(currentFiber: any) {debugger
+function performUnitOfWork(currentFiber: any) {
   beginWork(currentFiber);
   if(currentFiber.child) {
     return currentFiber.child;
@@ -169,22 +195,44 @@ function updateHostRoot(currentFiber: any) {
 function reconcileChildren(currentFiber: any, newChildren: any) {
   let newChildrenIndex = 0; // 新子节点的索引
   let prevSibling: any; // 上一个新的子Fiber
-  while(newChildrenIndex < newChildren.length) {
+   // todo: 当前的 fiber 有 alternate 并且 alternate 有 child 属性
+  let oldFiber = currentFiber.alternate && currentFiber.alternate.child;
+  while(newChildrenIndex < newChildren.length || oldFiber) {
     let newChild = newChildren[newChildrenIndex];
+    let newFiber: any; // 新的 fiber
+    const sameType = oldFiber && newChild && oldFiber.type === newChild.type;
     let tag;
-    if(newChild.type === ELEMENT_TEXT || typeof newChild === 'string') {
+    if(newChild && (newChild.type === ELEMENT_TEXT || typeof newChild === 'string')) {
       tag = TAG_TEXT; // 文本节点
-    } else if (typeof newChild.type === 'string') {
+    } else if (newChild && typeof newChild.type === 'string') {
       tag = TAG_HOST; // 原生DOM节点
     }
-    const newFiber = {
-      tag,
-      type: newChild.type,
-      props: newChild.props,
-      stateNode: null,
-      return: currentFiber, // 父Fiber
-      effectTag: PLACEMENT, // 副作用标识 render 要收集副作用，添加、删除、更新
-      nextEffect: null, // todo：effect list也是一个单链表，effect list的顺序和完成顺序是一样的，但是节点可以少
+    if(sameType) { // 说明老fiber和新的虚拟DOM节点一样，可以复用老的DOM节点，更新即可
+      newFiber = {
+        tag: oldFiber.tag,
+        type: oldFiber.type,
+        props: newChild.props, // 要用新的元素的props
+        stateNode: oldFiber.stateNode,
+        alternate: oldFiber, // 新fiber的alternate指向老的fiber节点
+        return: currentFiber, // 父Fiber
+        effectTag: UPDATE, // 副作用标识 render 要收集副作用，添加、删除、更新
+        nextEffect: null, // todo：effect list也是一个单链表，effect list的顺序和完成顺序是一样的，但是节点可以少
+      }
+    } else {
+      if(newChild) { // 看看新的虚拟DOM是不是为null
+        newFiber = {
+          tag,
+          type: newChild.type,
+          props: newChild.props,
+          stateNode: null,
+          return: currentFiber, // 父Fiber
+          effectTag: PLACEMENT, // 副作用标识 render 要收集副作用，添加、删除、更新
+          nextEffect: null, // todo：effect list也是一个单链表，effect list的顺序和完成顺序是一样的，但是节点可以少
+        }
+      }
+    }
+    if(oldFiber) {
+      oldFiber = oldFiber.sibling; // oldFiber 指针往后移动一次
     }
     //!!! 最小的儿子没有弟弟
     if(newFiber) {
